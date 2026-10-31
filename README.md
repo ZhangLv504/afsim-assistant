@@ -50,4 +50,3 @@ python -m afsim_assistant search "SAM radar processor" --include-unverified
 文件并调用 Mission 验证。其他需求会明确拒绝，不会退化为自由生成。
 验证不仅要求 Mission 正常退出和跑满时长，还要求事件输出中存在需求对应的能力证据；
 例如探测/跟踪必须建立或更新航迹，交战必须出现 `WEAPON_FIRED`。
-
