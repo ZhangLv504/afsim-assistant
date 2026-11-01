@@ -20,6 +20,7 @@ python -m afsim_assistant ollama
 python -m afsim_assistant prepare "生成一个地空导弹拦截单架飞机的场景"
 python -m afsim_assistant mcp
 python -m afsim_assistant resolve "生成一个地空导弹拦截单架飞机的场景"
+python -m afsim_assistant plan "生成一个蓝方地空导弹阵地拦截一架红方飞机的场景，仿真10分钟，需要雷达探测、跟踪和导弹交战"
 python -m afsim_assistant prototype "生成一个蓝方地空导弹阵地拦截一架红方飞机的场景，仿真10分钟，需要雷达探测、跟踪和导弹交战"
 ```
 
@@ -45,8 +46,14 @@ python -m afsim_assistant search "SAM radar processor" --include-unverified
 能力为每支力量列出候选类型。它只提供候选与评分依据，不会在没有用户选择或后续
 确定性策略的情况下自动选定类型。
 
+`plan` 从已登记且受支持的官方 Demo 上下文中选择生成模板，并绑定该上下文内真实
+可用的类型。`resolve` 的全局候选只作为参考，不能直接跨 Demo 注入；如果用户明确
+要求的类型不属于所选模板上下文，计划阶段会拒绝继续。
+
 `prototype` 当前只接受“一座 SAM 阵地对一架飞机，包含探测、跟踪和交战”的需求。
 它从本机官方 `demos/launcher` 复制上下文到 `workspace/staging/`，生成新的入口和布设
 文件并调用 Mission 验证。其他需求会明确拒绝，不会退化为自由生成。
 验证不仅要求 Mission 正常退出和跑满时长，还要求事件输出中存在需求对应的能力证据；
 例如探测/跟踪必须建立或更新航迹，交战必须出现 `WEAPON_FIRED`。
+每个生成项目的 `ASSISTANT_MANIFEST.json` 还会保存模板内依赖文件的相对路径、大小和
+SHA-256，用于审计实际复制的 Demo 依赖闭包。

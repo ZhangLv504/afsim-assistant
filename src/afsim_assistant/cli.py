@@ -8,9 +8,15 @@ from .catalog import build_catalog, load_catalog, save_catalog
 from .config import Settings
 from .mcp_client import McpError, McpStdioClient
 from .ollama_client import OllamaClient, OllamaError
-from .orchestrator import build_and_validate_prototype, prepare_requirement, resolve_requirement
+from .orchestrator import (
+    build_and_validate_prototype,
+    plan_requirement,
+    prepare_requirement,
+    resolve_requirement,
+)
 from .project_builder import BuildError
 from .search import DEFAULT_STATUSES, rebuild_index, search
+from .template_registry import PlanningError
 
 
 def _print(payload: object) -> None:
@@ -128,6 +134,23 @@ def command_prototype(settings: Settings, args: argparse.Namespace) -> int:
     return 0 if result["build"]["validation"].get("ok") else 3
 
 
+def command_plan(settings: Settings, args: argparse.Namespace) -> int:
+    if not settings.index_path.is_file():
+        _print({"error": "knowledge index does not exist", "hint": "run build-index first"})
+        return 2
+    client = OllamaClient.from_environment(model=args.model)
+    result = plan_requirement(
+        args.requirement,
+        settings=settings,
+        client=client,
+        include_unverified=False,
+        knowledge_limit=args.knowledge_limit,
+        type_limit=args.type_limit,
+    )
+    _print(result)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="afsim-assistant")
     subcommands = parser.add_subparsers(dest="command", required=True)
@@ -161,6 +184,14 @@ def build_parser() -> argparse.ArgumentParser:
     resolve_parser.add_argument("--type-limit", type=int, default=5)
     resolve_parser.add_argument("--include-unverified", action="store_true")
 
+    plan_parser = subcommands.add_parser(
+        "plan", help="select a verified template context and bind its local AFSIM types"
+    )
+    plan_parser.add_argument("requirement")
+    plan_parser.add_argument("--model")
+    plan_parser.add_argument("--knowledge-limit", type=int, default=8)
+    plan_parser.add_argument("--type-limit", type=int, default=5)
+
     prototype_parser = subcommands.add_parser(
         "prototype", help="build and validate the supported SAM-vs-aircraft prototype"
     )
@@ -187,11 +218,20 @@ def main(argv: list[str] | None = None) -> None:
         "search": command_search,
         "prepare": command_prepare,
         "resolve": command_resolve,
+        "plan": command_plan,
         "prototype": command_prototype,
     }
     try:
         code = handlers[args.command](settings, args)
-    except (OSError, ValueError, json.JSONDecodeError, OllamaError, McpError, BuildError) as exc:
+    except (
+        OSError,
+        ValueError,
+        json.JSONDecodeError,
+        OllamaError,
+        McpError,
+        BuildError,
+        PlanningError,
+    ) as exc:
         _print({"error": str(exc), "command": args.command})
         code = 1
     raise SystemExit(code)

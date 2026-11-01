@@ -54,6 +54,10 @@ class ProjectBuilderTests(unittest.TestCase):
         manifest = json.loads(Path(result["manifest_path"]).read_text(encoding="utf-8"))
         self.assertEqual(manifest["status"], "staging")
         self.assertEqual(manifest["selected_context_types"]["air_defense_site"], "SAM_LAUNCHER")
+        self.assertEqual(manifest["schema_version"], 2)
+        self.assertEqual(manifest["template"]["dependency_strategy"], "copy_official_demo_subtree")
+        self.assertTrue(manifest["dependency_inventory"])
+        self.assertTrue(all(item["sha256"] for item in manifest["dependency_inventory"]))
         with self.assertRaisesRegex(BuildError, "already exists"):
             build_sam_air_intercept(self.settings, self.spec)
 

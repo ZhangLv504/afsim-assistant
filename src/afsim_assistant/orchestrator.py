@@ -12,6 +12,7 @@ from .project_builder import (
 )
 from .scenario_spec import SCENARIO_SPEC_SCHEMA, SYSTEM_PROMPT, validate_spec
 from .search import DEFAULT_STATUSES, search
+from .template_registry import select_generation_plan
 from .type_resolver import resolve_force_types
 
 
@@ -107,6 +108,30 @@ def resolve_requirement(
     return prepared
 
 
+def plan_requirement(
+    requirement: str,
+    *,
+    settings: Settings,
+    client: OllamaClient,
+    include_unverified: bool = False,
+    knowledge_limit: int = 8,
+    type_limit: int = 5,
+) -> dict:
+    resolved = resolve_requirement(
+        requirement,
+        settings=settings,
+        client=client,
+        include_unverified=include_unverified,
+        knowledge_limit=knowledge_limit,
+        type_limit=type_limit,
+    )
+    resolved["generation_plan"] = select_generation_plan(
+        resolved["scenario_spec"],
+        resolved["type_resolution"],
+    )
+    return resolved
+
+
 def build_and_validate_prototype(
     requirement: str,
     *,
@@ -114,7 +139,7 @@ def build_and_validate_prototype(
     client: OllamaClient,
     scenario_id: str | None = None,
 ) -> dict:
-    resolved = resolve_requirement(
+    resolved = plan_requirement(
         requirement,
         settings=settings,
         client=client,
@@ -126,6 +151,7 @@ def build_and_validate_prototype(
         settings,
         resolved["scenario_spec"],
         scenario_id=scenario_id,
+        generation_plan=resolved["generation_plan"],
     )
     with McpStdioClient(settings) as mcp:
         raw_validation = mcp.call_tool(
@@ -145,6 +171,7 @@ def build_and_validate_prototype(
         "requirement": requirement,
         "scenario_spec": resolved["scenario_spec"],
         "type_resolution": resolved["type_resolution"],
+        "generation_plan": resolved["generation_plan"],
         "build": completed,
     }
 

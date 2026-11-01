@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import Settings
+from .template_registry import select_generation_plan
 
 
 class BuildError(RuntimeError):
@@ -60,17 +62,36 @@ def _write_json(path: Path, payload: dict) -> None:
     temporary.replace(path)
 
 
+def _dependency_inventory(project_dir: Path, generated_paths: set[Path]) -> list[dict]:
+    inventory = []
+    for path in sorted(project_dir.rglob("*")):
+        if not path.is_file() or path in generated_paths or "output" in path.parts:
+            continue
+        content = path.read_bytes()
+        inventory.append(
+            {
+                "path": path.relative_to(project_dir).as_posix(),
+                "bytes": len(content),
+                "sha256": hashlib.sha256(content).hexdigest(),
+            }
+        )
+    return inventory
+
+
 def build_sam_air_intercept(
     settings: Settings,
     spec: dict,
     *,
     scenario_id: str | None = None,
+    generation_plan: dict | None = None,
 ) -> dict:
     supported, problems = supports_sam_air_intercept(spec)
     if not supported:
         raise BuildError("; ".join(problems))
 
-    source = settings.demos_root / "launcher"
+    plan = generation_plan or select_generation_plan(spec)
+    template = plan["template"]
+    source = settings.demos_root / template["source_relative"]
     if not (source / "setup.txt").is_file():
         raise BuildError(f"official launcher demo not found: {source}")
     slug = _safe_slug(scenario_id or spec["scenario_name"])
@@ -89,6 +110,10 @@ def build_sam_air_intercept(
     case_name = slug
     entry = target / "generated_main.txt"
     scenario = target / "scenarios" / "generated_scenario.txt"
+    selected_types = {
+        binding["role"]: binding["selected_type"]
+        for binding in plan["force_bindings"]
+    }
 
     _write_text(
         entry,
@@ -115,8 +140,8 @@ end_time {seconds} sec
     )
     _write_text(
         scenario,
-        """# Generated instance laydown. Types come from the copied official launcher demo.
-platform red_aircraft AIRPLANE
+        f"""# Generated instance laydown. Types come from the copied official launcher demo.
+platform red_aircraft {selected_types['aircraft']}
    side red
    icon C-130
    indestructible
@@ -129,7 +154,7 @@ platform red_aircraft AIRPLANE
    commander SELF
 end_platform
 
-platform blue_sam_site SAM_LAUNCHER
+platform blue_sam_site {selected_types['air_defense_site']}
    side blue
    icon SA-11_Launcher
    position 35:32n 76:13w altitude 0 ft msl
@@ -140,21 +165,23 @@ end_platform
     )
 
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "status": "staging",
         "template": {
-            "id": "official.launcher.1st_run",
+            "id": template["id"],
             "source": str(source),
-            "entry_reference": "1st_run.txt",
+            "entry_reference": template["entry_reference"],
+            "dependency_strategy": template["dependency_strategy"],
         },
         "generated_entry": str(entry),
         "scenario_spec": spec,
-        "selected_context_types": {
-            "air_defense_site": "SAM_LAUNCHER",
-            "aircraft": "AIRPLANE",
-            "note": "These names are valid inside the copied launcher demo context; they are not selected from a global name alone.",
-        },
+        "generation_plan": plan,
+        "selected_context_types": selected_types,
+        "dependency_inventory": _dependency_inventory(
+            target,
+            {entry, scenario, target / "ASSISTANT_MANIFEST.json"},
+        ),
         "assumptions": [
             "The official launcher geometry is adjusted so the aircraft enters radar range within the requested duration.",
             "One blue SAM site engages one indestructible red aircraft.",
